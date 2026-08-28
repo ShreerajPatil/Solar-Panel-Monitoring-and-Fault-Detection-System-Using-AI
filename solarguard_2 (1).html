@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SolarGuard Pro — Fault Detection Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #060a0f;
+    --bg2:       #0b1118;
+    --bg3:       #0f1922;
+    --border:    #1a2d40;
+    --gold:      #f5a623;
+    --gold2:     #ffd166;
+    --green:     #00e5a0;
+    --green2:    #00ff88;
+    --red:       #ff3b5c;
+    --red2:      #ff6b6b;
+    --orange:    #ff8c42;
+    --cyan:      #00d4ff;
+    --yellow:    #ffe566;
+    --muted:     #4a6070;
+    --text:      #c8dde8;
+    --text2:     #7a99aa;
+    --glow-g:    0 0 20px rgba(0,229,160,0.3);
+    --glow-r:    0 0 20px rgba(255,59,92,0.4);
+    --glow-o:    0 0 20px rgba(255,140,66,0.3);
+    --glow-c:    0 0 20px rgba(0,212,255,0.3);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    font-family: 'Exo 2', sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* ─── Grid bg ─── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ─── Glow orbs ─── */
+  .orb {
+    position: fixed; border-radius: 50%;
+    filter: blur(80px); pointer-events: none; z-index: 0;
+  }
+  .orb1 { width:400px;height:400px;top:-100px;left:-100px;background:rgba(245,166,35,0.06); }
+  .orb2 { width:300px;height:300px;bottom:0;right:0;background:rgba(0,229,160,0.05); }
+  .orb3 { width:250px;height:250px;top:50%;left:50%;background:rgba(0,212,255,0.04); }
+
+  /* ─── Main layout ─── */
+  .wrap { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 24px 40px; }
+
+  /* ─── Header ─── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 24px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+    flex-wrap: wrap; gap: 16px;
+  }
+
+  .logo-area { display: flex; align-items: center; gap: 14px; }
+
+  .sun-icon {
+    width: 48px; height: 48px;
+    background: conic-gradient(from 0deg, var(--gold), var(--gold2), var(--gold));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 0 30px rgba(245,166,35,0.5), 0 0 60px rgba(245,166,35,0.2);
+    animation: pulse-sun 3s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse-sun {
+    0%,100% { box-shadow: 0 0 30px rgba(245,166,35,0.5), 0 0 60px rgba(245,166,35,0.2); }
+    50%      { box-shadow: 0 0 50px rgba(245,166,35,0.8), 0 0 100px rgba(245,166,35,0.3); }
+  }
+
+  .logo-text h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px; font-weight: 900;
+    letter-spacing: 3px; line-height: 1;
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .logo-text p {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px; color: var(--muted); letter-spacing: 2px;
+    margin-top: 4px;
+  }
+
+  .header-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+  /* ─── Connection pill ─── */
+  .conn-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px; border-radius: 100px;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px; color: var(--muted);
+    cursor: pointer; transition: all .3s;
+    position: relative;
+  }
+  .conn-pill:hover { border-color: var(--cyan); color: var(--cyan); }
+  .conn-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    transition: background .3s;
+  }
+  .conn-dot.connected   { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2s infinite; }
+  .conn-dot.connecting  { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); animation: blink .5s infinite; }
+  .conn-dot.error       { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ─── Topic config bar ─── */
+  .config-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 28px;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .config-bar label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px; color: var(--muted); letter-spacing: 1px; white-space: nowrap;
+  }
+  .config-bar input {
+    flex: 1; min-width: 180px;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px;
+    color: var(--cyan); font-family: 'Share Tech Mono', monospace; font-size: 13px;
+    outline: none; transition: border-color .2s;
+  }
+  .config-bar input:focus { border-color: var(--cyan); }
+  .config-bar button {
+    padding: 8px 20px; border-radius: 8px; border: none; cursor: pointer;
+    font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; transition: all .2s;
+  }
+  .btn-connect {
+    background: linear-gradient(135deg, var(--green), #00b87a);
+    color: #000;
+  }
+  .btn-connect:hover { transform: translateY(-1px); box-shadow: var(--glow-g); }
+  .btn-disconnect {
+    background: linear-gradient(135deg, var(--red), #cc2244);
+    color: #fff;
+  }
+  .btn-disconnect:hover { box-shadow: var(--glow-r); }
+
+  /* ─── Status bar ─── */
+  .status-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr));
+    gap: 12px; margin-bottom: 28px;
+  }
+  .stat-box {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 18px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat-box .lbl {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
+  }
+  .stat-box .val {
+    font-family: 'Orbitron', monospace;
+    font-size: 20px; font-weight: 700; color: var(--gold2);
+  }
+  .stat-box .val.green { color: var(--green); }
+  .stat-box .val.red   { color: var(--red); }
+
+  /* ─── Panel grid ─── */
+  .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px,1fr)); gap: 20px; margin-bottom: 28px; }
+
+  /* ─── Panel card ─── */
+  .panel-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden;
+    transition: all .4s; position: relative;
+  }
+  .panel-card.ok     { border-color: rgba(0,229,160,0.3); }
+  .panel-card.fault  { border-color: rgba(255,59,92,0.5); box-shadow: var(--glow-r); animation: fault-pulse 2s infinite; }
+  .panel-card.f1     { border-color: rgba(255,140,66,0.5); box-shadow: var(--glow-o); }
+  .panel-card.f3     { border-color: rgba(255,59,92,0.6); box-shadow: 0 0 30px rgba(255,59,92,0.4); }
+  @keyframes fault-pulse {
+    0%,100% { box-shadow: 0 0 20px rgba(255,59,92,0.3); }
+    50%      { box-shadow: 0 0 40px rgba(255,59,92,0.6); }
+  }
+
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, rgba(0,0,0,0.3), transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-header .pname {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px; font-weight: 700; letter-spacing: 2px; color: var(--gold2);
+  }
+  .fault-badge {
+    padding: 4px 12px; border-radius: 100px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    transition: all .3s;
+  }
+  .fault-badge.ok     { background: rgba(0,229,160,0.15); color: var(--green); border: 1px solid rgba(0,229,160,0.3); }
+  .fault-badge.f1     { background: rgba(255,140,66,0.15); color: var(--orange); border: 1px solid rgba(255,140,66,0.4); }
+  .fault-badge.f2     { background: rgba(255,59,92,0.15);  color: var(--red);    border: 1px solid rgba(255,59,92,0.4); animation: blink .8s infinite; }
+  .fault-badge.f3     { background: rgba(255,59,92,0.2);   color: var(--red2);   border: 1px solid rgba(255,59,92,0.5); animation: blink 1.2s infinite; }
+  .fault-badge.waiting{ background: rgba(74,96,112,0.2);   color: var(--muted);  border: 1px solid var(--border); }
+
+  .panel-body { padding: 20px; }
+
+  /* ─── Efficiency ring ─── */
+  .eff-row { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
+  .ring-wrap { position: relative; width: 88px; height: 88px; flex-shrink: 0; }
+  .ring-wrap svg { transform: rotate(-90deg); }
+  .ring-bg   { fill: none; stroke: var(--bg3); stroke-width: 7; }
+  .ring-fill { fill: none; stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 1s ease, stroke .4s; }
+  .ring-label {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .ring-label .pct {
+    font-family: 'Orbitron', monospace; font-size: 18px; font-weight: 900; line-height: 1;
+  }
+  .ring-label .sub {
+    font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: 1px;
+  }
+
+  .eff-info { flex: 1; }
+  .eff-info .big-v {
+    font-family: 'Orbitron', monospace; font-size: 30px; font-weight: 900;
+    color: var(--cyan); line-height: 1;
+  }
+  .eff-info .big-v span { font-size: 14px; color: var(--muted); margin-left: 4px; }
+  .eff-info .v-label {
+    font-family: 'Share Tech Mono', monospace; font-size: 10px;
+    color: var(--muted); letter-spacing: 2px; margin-top: 4px;
+  }
+  .eff-info .fault-msg {
+    margin-top: 8px; padding: 4px 10px; border-radius: 6px;
+    font-family: 'Share Tech Mono', monospace; font-size: 11px;
+    display: inline-block;
+  }
+  .fault-msg.ok  { background: rgba(0,229,160,0.1);  color: var(--green); }
+  .fault-msg.f1  { background: rgba(255,140,66,0.1); color: var(--orange); }
+  .fault-msg.f2  { background: rgba(255,59,92,0.1);  color: var(--red); }
+  .fault-msg.f3  { background: rgba(255,59,92,0.12); color: var(--red2); }
+
+  /* ─── Sensor row ─── */
+  .sensor-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .sensor-box {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px;
+    transition: border-color .3s;
+  }
+  .sensor-box .s-lbl {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px; color: var(--muted); letter-spacing: 2px; margin-bottom: 4px;
+  }
+  .sensor-box .s-val {
+    font-family: 'Orbitron', monospace; font-size: 18px; font-weight: 700;
+    transition: color .3s;
+  }
+  .sensor-box .s-val.temp { color: var(--orange); }
+  .sensor-box .s-val.hum  { color: var(--cyan); }
+  .sensor-box .s-val.hot  { color: var(--red); animation: blink 1s infinite; }
+  .sensor-box .s-unit {
+    font-size: 11px; color: var(--muted); margin-left: 2px;
+  }
+
+  /* ─── Last update ─── */
+  .last-upd {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px; color: var(--muted);
+    display: flex; justify-content: space-between;
+  }
+
+  /* ─── Alert log ─── */
+  .alert-section { margin-bottom: 28px; }
+  .section-title {
+    font-family: 'Orbitron', monospace; font-size: 12px; font-weight: 700;
+    letter-spacing: 3px; color: var(--muted); margin-bottom: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  .alert-log {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    max-height: 220px; overflow-y: auto;
+  }
+  .alert-log::-webkit-scrollbar { width: 4px; }
+  .alert-log::-webkit-scrollbar-track { background: var(--bg2); }
+  .alert-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-entry {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; border-bottom: 1px solid rgba(26,45,64,0.5);
+    animation: slide-in .3s ease;
+    font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  }
+  @keyframes slide-in { from { opacity:0; transform: translateX(-10px); } to { opacity:1; transform: none; } }
+
+  .log-entry:last-child { border-bottom: none; }
+  .log-time   { color: var(--muted); flex-shrink: 0; font-size: 10px; }
+  .log-badge  { padding: 2px 8px; border-radius: 4px; font-size: 10px; flex-shrink: 0; }
+  .log-badge.ok  { background: rgba(0,229,160,0.15); color: var(--green); }
+  .log-badge.f1  { background: rgba(255,140,66,0.15); color: var(--orange); }
+  .log-badge.f2  { background: rgba(255,59,92,0.15);  color: var(--red); }
+  .log-badge.f3  { background: rgba(255,59,92,0.2);   color: var(--red2); }
+  .log-msg    { color: var(--text2); flex: 1; }
+  .log-empty  {
+    padding: 24px; text-align: center;
+    font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--muted);
+  }
+
+  /* ─── Raw payload viewer ─── */
+  .raw-section { margin-bottom: 28px; }
+  .raw-box {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; font-family: 'Share Tech Mono', monospace; font-size: 11px;
+    color: var(--text2); max-height: 140px; overflow-y: auto; line-height: 1.8;
+  }
+  .raw-box::-webkit-scrollbar { width: 4px; }
+  .raw-box::-webkit-scrollbar-thumb { background: var(--border); }
+  .raw-line { display: flex; gap: 10px; }
+  .raw-topic { color: var(--cyan); }
+  .raw-payload { color: var(--gold); }
+
+  /* ─── Footer ─── */
+  footer {
+    border-top: 1px solid var(--border); padding: 16px 0;
+    font-family: 'Share Tech Mono', monospace; font-size: 10px;
+    color: var(--muted); text-align: center; letter-spacing: 1px;
+  }
+
+  /* ─── Waiting state ─── */
+  .waiting-shimmer {
+    background: linear-gradient(90deg, var(--bg3) 25%, var(--bg2) 50%, var(--bg3) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 6px; height: 1em; display: inline-block; width: 60px;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  /* ─── Total Voltage Card ─── */
+  .total-voltage-card {
+    background: var(--bg2);
+    border: 1px solid rgba(245,166,35,0.4);
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .total-voltage-card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at top left, rgba(245,166,35,0.06) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .tv-top {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    flex-wrap: wrap; gap: 20px; margin-bottom: 24px;
+  }
+  .tv-main {}
+  .tv-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px; color: var(--muted); letter-spacing: 3px;
+    text-transform: uppercase; margin-bottom: 6px;
+  }
+  .tv-number {
+    font-family: 'Orbitron', monospace;
+    font-size: 56px; font-weight: 900; line-height: 1;
+    background: linear-gradient(135deg, var(--gold), var(--gold2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    transition: all .5s;
+  }
+  .tv-unit {
+    font-family: 'Orbitron', monospace;
+    font-size: 20px; font-weight: 400;
+    color: var(--muted); margin-left: 6px;
+    -webkit-text-fill-color: var(--muted);
+  }
+  .tv-sub {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px; color: var(--text2); margin-top: 6px;
+  }
+
+  /* ─── Big gauge ─── */
+  .tv-gauge-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .tv-gauge-wrap svg { overflow: visible; }
+  .gauge-bg   { fill: none; stroke: var(--bg3); stroke-width: 10; stroke-linecap: round; }
+  .gauge-fill { fill: none; stroke-width: 10; stroke-linecap: round;
+                transition: stroke-dashoffset 1s ease, stroke .4s; }
+  .gauge-lbl {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px; fill: var(--muted); text-anchor: middle;
+  }
+
+  /* ─── Per-panel breakdown bars ─── */
+  .tv-breakdown {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    padding-top: 20px; border-top: 1px solid var(--border);
+  }
+  .tv-panel-bar { display: flex; flex-direction: column; gap: 6px; }
+  .tv-pb-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .tv-pb-name {
+    font-family: 'Orbitron', monospace; font-size: 10px;
+    font-weight: 700; letter-spacing: 1px; color: var(--gold2);
+  }
+  .tv-pb-val {
+    font-family: 'Share Tech Mono', monospace; font-size: 13px;
+    color: var(--cyan); transition: color .3s;
+  }
+  .tv-pb-track {
+    height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden;
+  }
+  .tv-pb-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 1s ease, background .4s;
+  }
+  .tv-pb-contrib {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px; color: var(--muted); text-align: right;
+  }
+
+  /* ─── Fault overlay flash ─── */
+  .fault-flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 100;
+    background: rgba(255,59,92,0.08);
+    animation: flash-anim .5s ease forwards;
+  }
+  @keyframes flash-anim { 0%{opacity:1} 100%{opacity:0} }
+
+  @media (max-width: 600px) {
+    .logo-text h1 { font-size: 16px; }
+    .panels { grid-template-columns: 1fr; }
+    .eff-info .big-v { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<div class="wrap">
+
+  <!-- ─── Header ─── -->
+  <header>
+    <div class="logo-area">
+      <div class="sun-icon">☀️</div>
+      <div class="logo-text">
+        <h1>SOLARGUARD PRO</h1>
+        <p>FAULT DETECTION DASHBOARD · ESP32-S3 · 3-PANEL MONITOR</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="conn-pill" id="connPill">
+        <div class="conn-dot" id="connDot"></div>
+        <span id="connLabel">DISCONNECTED</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── Config Bar ─── -->
+  <div class="config-bar">
+    <label>MQTT TOPIC BASE ▸</label>
+    <input type="text" id="topicInput" value="solar/yourname" placeholder="solar/yourname"/>
+    <button class="btn-connect" id="btnConnect" onclick="startMQTT()">CONNECT</button>
+    <button class="btn-disconnect" id="btnDisconnect" onclick="stopMQTT()" style="display:none">DISCONNECT</button>
+  </div>
+
+  <!-- ─── Stats strip ─── -->
+  <div class="status-strip">
+    <div class="stat-box">
+      <div class="lbl">TOTAL PANELS</div>
+      <div class="val" id="statTotal">3</div>
+    </div>
+    <div class="stat-box">
+      <div class="lbl">PANELS OK</div>
+      <div class="val green" id="statOk">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="lbl">FAULTS ACTIVE</div>
+      <div class="val red" id="statFault">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="lbl">AVG EFFICIENCY</div>
+      <div class="val" id="statEff">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="lbl">TOTAL VOLTAGE</div>
+      <div class="val" id="statTotalV" style="color:var(--gold2)">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="lbl">LAST UPDATE</div>
+      <div class="val" id="statTime" style="font-size:13px;color:var(--text2)">—</div>
+    </div>
+  </div>
+
+  <!-- ─── Total Voltage Card ─── -->
+  <div class="total-voltage-card">
+    <div class="tv-top">
+      <div class="tv-main">
+        <div class="tv-label">⚡ TOTAL COMBINED VOLTAGE OUTPUT</div>
+        <div>
+          <span class="tv-number" id="tvNumber">—</span><span class="tv-unit">V</span>
+        </div>
+        <div class="tv-sub" id="tvSub">Waiting for panel data...</div>
+      </div>
+
+      <!-- Semi-circle gauge -->
+      <div class="tv-gauge-wrap">
+        <svg width="160" height="90" viewBox="0 0 160 90">
+          <!-- Track: semi-circle from 180° to 0° -->
+          <path class="gauge-bg"
+            d="M 15 80 A 65 65 0 0 1 145 80"
+            stroke-dasharray="204" stroke-dashoffset="0"/>
+          <path class="gauge-fill" id="gaugeArc"
+            d="M 15 80 A 65 65 0 0 1 145 80"
+            stroke="var(--gold)" stroke-dasharray="204" stroke-dashoffset="204"/>
+          <!-- Min / Max labels -->
+          <text class="gauge-lbl" x="10" y="90" font-size="9">0V</text>
+          <text class="gauge-lbl" x="150" y="90" font-size="9">72V</text>
+          <text class="gauge-lbl" x="80" y="26" id="gaugePct" font-size="13" fill="var(--gold2)" font-weight="700">—</text>
+        </svg>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:2px;margin-top:-6px">MAX 72V (3×24V)</div>
+      </div>
+    </div>
+
+    <!-- Per-panel breakdown -->
+    <div class="tv-breakdown">
+      <div class="tv-panel-bar" id="tvBar1">
+        <div class="tv-pb-header">
+          <span class="tv-pb-name">PANEL 1</span>
+          <span class="tv-pb-val" id="tvV1">— V</span>
+        </div>
+        <div class="tv-pb-track"><div class="tv-pb-fill" id="tvFill1" style="width:0%;background:var(--cyan)"></div></div>
+        <div class="tv-pb-contrib" id="tvContrib1">—% of total</div>
+      </div>
+      <div class="tv-panel-bar" id="tvBar2">
+        <div class="tv-pb-header">
+          <span class="tv-pb-name">PANEL 2</span>
+          <span class="tv-pb-val" id="tvV2">— V</span>
+        </div>
+        <div class="tv-pb-track"><div class="tv-pb-fill" id="tvFill2" style="width:0%;background:var(--green)"></div></div>
+        <div class="tv-pb-contrib" id="tvContrib2">—% of total</div>
+      </div>
+      <div class="tv-panel-bar" id="tvBar3">
+        <div class="tv-pb-header">
+          <span class="tv-pb-name">PANEL 3</span>
+          <span class="tv-pb-val" id="tvV3">— V</span>
+        </div>
+        <div class="tv-pb-track"><div class="tv-pb-fill" id="tvFill3" style="width:0%;background:var(--orange)"></div></div>
+        <div class="tv-pb-contrib" id="tvContrib3">—% of total</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Panel Cards ─── -->
+  <div class="panels" id="panelsGrid">
+    <!-- generated by JS -->
+  </div>
+
+  <!-- ─── Alert Log ─── -->
+  <div class="alert-section">
+    <div class="section-title">EVENT LOG</div>
+    <div class="alert-log" id="alertLog">
+      <div class="log-empty" id="logEmpty">Waiting for data... Connect to your MQTT broker above.</div>
+    </div>
+  </div>
+
+  <!-- ─── Raw Payloads ─── -->
+  <div class="raw-section">
+    <div class="section-title">RAW MQTT STREAM</div>
+    <div class="raw-box" id="rawBox">
+      <div style="color:var(--muted)">// Incoming MQTT messages will appear here</div>
+    </div>
+  </div>
+
+  <footer>SOLARGUARD PRO · MQTT LIVE DASHBOARD · broker.hivemq.com · ESP32-S3</footer>
+</div>
+
+<!-- ─── Fault flash overlay ─── -->
+<div class="fault-flash" id="faultFlash" style="display:none"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+const panels = {
+  1: { v:null,t:null,h:null,eff:null,fault:'waiting',updated:null },
+  2: { v:null,t:null,h:null,eff:null,fault:'waiting',updated:null },
+  3: { v:null,t:null,h:null,eff:null,fault:'waiting',updated:null },
+};
+
+const faultLabels = {
+  ok:'✔ NORMAL', F1:'⚠ DUST/SAND', F2:'✖ PANEL DEAD', F3:'🔥 HOTSPOT', waiting:'— WAITING'
+};
+const faultMsgs = {
+  ok:'All clear — operating normally',
+  F1:'Low voltage — panel may be covered by dust or sand',
+  F2:'Zero voltage — panel may be completely dead',
+  F3:'High temperature — hotspot detected',
+  waiting:'Awaiting data from ESP32-S3...'
+};
+
+let mqttClient = null;
+let logCount = 0;
+
+// ══════════════════════════════════════════════════════════
+// INIT CARDS
+// ══════════════════════════════════════════════════════════
+function buildCards() {
+  const grid = document.getElementById('panelsGrid');
+  grid.innerHTML = '';
+  for (let i = 1; i <= 3; i++) {
+    grid.innerHTML += `
+    <div class="panel-card" id="card${i}">
+      <div class="panel-header">
+        <div class="pname">PANEL ${i}</div>
+        <div class="fault-badge waiting" id="badge${i}">${faultLabels.waiting}</div>
+      </div>
+      <div class="panel-body">
+        <div class="eff-row">
+          <div class="ring-wrap">
+            <svg width="88" height="88" viewBox="0 0 88 88">
+              <circle class="ring-bg" cx="44" cy="44" r="36"/>
+              <circle class="ring-fill" id="ring${i}" cx="44" cy="44" r="36"
+                stroke-dasharray="226" stroke-dashoffset="226" stroke="var(--muted)"/>
+            </svg>
+            <div class="ring-label">
+              <div class="pct" id="effPct${i}" style="color:var(--muted)">—</div>
+              <div class="sub">EFF%</div>
+            </div>
+          </div>
+          <div class="eff-info">
+            <div class="big-v" id="voltage${i}">—<span>V</span></div>
+            <div class="v-label">VOLTAGE</div>
+            <div class="fault-msg waiting" id="faultMsg${i}">Waiting for data...</div>
+          </div>
+        </div>
+        <div class="sensor-row">
+          <div class="sensor-box">
+            <div class="s-lbl">TEMPERATURE</div>
+            <div class="s-val temp" id="temp${i}">—<span class="s-unit">°C</span></div>
+          </div>
+          <div class="sensor-box">
+            <div class="s-lbl">HUMIDITY</div>
+            <div class="s-val hum" id="hum${i}">—<span class="s-unit">%</span></div>
+          </div>
+        </div>
+        <div class="last-upd">
+          <span id="upd${i}">No data yet</span>
+          <span>ESP32-S3 · DHT11</span>
+        </div>
+      </div>
+    </div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// UPDATE CARD
+// ══════════════════════════════════════════════════════════
+function updateCard(pNum, data) {
+  const p = panels[pNum];
+  const prevFault = p.fault;
+
+  p.v     = data.v;
+  p.t     = data.t;
+  p.h     = data.h;
+  p.eff   = data.eff;
+  p.fault = (data.fault || 'ok').toLowerCase();
+  p.updated = new Date();
+
+  const fk = p.fault;
+
+  // Card border class
+  const card = document.getElementById(`card${pNum}`);
+  card.className = 'panel-card ' + (fk === 'ok' ? 'ok' : (fk === 'f1' ? 'f1' : 'fault'));
+
+  // Badge
+  const badge = document.getElementById(`badge${pNum}`);
+  badge.className = 'fault-badge ' + fk;
+  badge.textContent = faultLabels[fk] || fk.toUpperCase();
+
+  // Voltage
+  document.getElementById(`voltage${pNum}`).innerHTML = `${p.v.toFixed(1)}<span>V</span>`;
+
+  // Efficiency ring
+  const circum = 226;
+  const offset = circum - (p.eff / 100) * circum;
+  const ringColor = p.eff >= 70 ? 'var(--green)' : p.eff >= 40 ? 'var(--yellow)' : 'var(--red)';
+  const ring = document.getElementById(`ring${pNum}`);
+  ring.style.strokeDashoffset = offset;
+  ring.style.stroke = ringColor;
+
+  const effPct = document.getElementById(`effPct${pNum}`);
+  effPct.textContent = p.eff + '%';
+  effPct.style.color = ringColor;
+
+  // Fault msg
+  const fm = document.getElementById(`faultMsg${pNum}`);
+  fm.className = 'fault-msg ' + fk;
+  fm.textContent = faultMsgs[fk] || fk;
+
+  // Temp
+  const tempEl = document.getElementById(`temp${pNum}`);
+  const isHot = p.t >= 50;
+  tempEl.className = 's-val ' + (isHot ? 'hot' : 'temp');
+  tempEl.innerHTML = `${p.t.toFixed(1)}<span class="s-unit">°C</span>`;
+
+  // Hum
+  document.getElementById(`hum${pNum}`).innerHTML = `${p.h.toFixed(1)}<span class="s-unit">%</span>`;
+
+  // Time
+  const ts = p.updated.toLocaleTimeString();
+  document.getElementById(`upd${pNum}`).textContent = 'Updated ' + ts;
+
+  // Flash on new fault
+  if (prevFault !== p.fault && p.fault !== 'ok' && prevFault !== 'waiting') {
+    triggerFaultFlash();
+  }
+
+  // Log event
+  if (prevFault !== p.fault) {
+    addLog(pNum, fk, ts);
+  }
+
+  updateStats();
+}
+
+// ══════════════════════════════════════════════════════════
+// STATS
+// ══════════════════════════════════════════════════════════
+function updateStats() {
+  let ok = 0, fault = 0, effSum = 0, effCount = 0;
+  let totalV = 0, vCount = 0;
+  const vArr = [];
+
+  for (let i = 1; i <= 3; i++) {
+    const p = panels[i];
+    if (p.fault === 'waiting') { vArr.push(null); continue; }
+    if (p.fault === 'ok') ok++;
+    else fault++;
+    if (p.eff !== null) { effSum += p.eff; effCount++; }
+    if (p.v !== null)   { totalV += p.v; vCount++; vArr.push(p.v); }
+    else vArr.push(null);
+  }
+
+  document.getElementById('statOk').textContent    = ok || '—';
+  document.getElementById('statFault').textContent = fault || '—';
+  document.getElementById('statEff').textContent   = effCount ? Math.round(effSum / effCount) + '%' : '—';
+  document.getElementById('statTime').textContent  = new Date().toLocaleTimeString();
+
+  // ── Total Voltage ──────────────────────────────────────
+  if (vCount > 0) {
+    const MAX_V = 72; // 3 × 24V nominal
+
+    // Stat box
+    document.getElementById('statTotalV').textContent = totalV.toFixed(1) + ' V';
+
+    // Big number
+    document.getElementById('tvNumber').textContent = totalV.toFixed(2);
+
+    // Sub label
+    const missing = 3 - vCount;
+    document.getElementById('tvSub').textContent =
+      missing > 0
+        ? `${vCount}/3 panels reporting · ${missing} panel(s) waiting`
+        : `All 3 panels · Nominal max: ${MAX_V}V`;
+
+    // Gauge arc (semi-circle dashoffset)
+    const arcLen    = 204;
+    const fillRatio = Math.min(totalV / MAX_V, 1);
+    const offset    = arcLen - fillRatio * arcLen;
+    const gaugeArc  = document.getElementById('gaugeArc');
+    gaugeArc.style.strokeDashoffset = offset;
+    const gColor = fillRatio >= 0.7 ? 'var(--green)' :
+                   fillRatio >= 0.4 ? 'var(--gold)'  : 'var(--red)';
+    gaugeArc.style.stroke = gColor;
+    document.getElementById('gaugePct').textContent =
+      Math.round(fillRatio * 100) + '%';
+
+    // Per-panel breakdown bars
+    const barColors = ['var(--cyan)', 'var(--green)', 'var(--orange)'];
+    for (let i = 0; i < 3; i++) {
+      const v = vArr[i];
+      const pn = i + 1;
+      if (v === null) {
+        document.getElementById(`tvV${pn}`).textContent     = '— V';
+        document.getElementById(`tvFill${pn}`).style.width  = '0%';
+        document.getElementById(`tvContrib${pn}`).textContent = '—% of total';
+      } else {
+        document.getElementById(`tvV${pn}`).textContent = v.toFixed(2) + ' V';
+        const pctOfMax   = Math.min((v / (MAX_V / 3)) * 100, 100);
+        const pctOfTotal = totalV > 0 ? ((v / totalV) * 100).toFixed(1) : '0';
+        const fill = document.getElementById(`tvFill${pn}`);
+        fill.style.width      = pctOfMax + '%';
+        fill.style.background = barColors[i];
+        document.getElementById(`tvContrib${pn}`).textContent = pctOfTotal + '% of total';
+      }
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// LOG
+// ══════════════════════════════════════════════════════════
+function addLog(pNum, fk, ts) {
+  const log = document.getElementById('alertLog');
+  const empty = document.getElementById('logEmpty');
+  if (empty) empty.remove();
+
+  const msgs = { ok:'Status cleared — now normal', f1:'Low voltage — dust/sand detected',
+                 f2:'CRITICAL — Panel voltage zero', f3:'ALERT — Hotspot temperature exceeded' };
+
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `
+    <span class="log-time">${ts}</span>
+    <span class="log-badge ${fk}">P${pNum} ${fk.toUpperCase()}</span>
+    <span class="log-msg">${msgs[fk] || fk}</span>`;
+  log.insertBefore(entry, log.firstChild);
+
+  logCount++;
+  if (logCount > 50) log.lastChild?.remove();
+}
+
+// ══════════════════════════════════════════════════════════
+// RAW LOG
+// ══════════════════════════════════════════════════════════
+function addRaw(topic, payload) {
+  const box = document.getElementById('rawBox');
+  const line = document.createElement('div');
+  line.className = 'raw-line';
+  const t = new Date().toLocaleTimeString();
+  line.innerHTML = `<span style="color:var(--muted)">${t}</span>
+    <span class="raw-topic">${topic}</span>
+    <span style="color:var(--muted)">▸</span>
+    <span class="raw-payload">${payload}</span>`;
+  box.insertBefore(line, box.firstChild);
+  while (box.children.length > 20) box.lastChild?.remove();
+}
+
+// ══════════════════════════════════════════════════════════
+// FAULT FLASH
+// ══════════════════════════════════════════════════════════
+function triggerFaultFlash() {
+  const el = document.getElementById('faultFlash');
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 600);
+}
+
+// ══════════════════════════════════════════════════════════
+// MQTT
+// ══════════════════════════════════════════════════════════
+function setConnState(state) {
+  const dot   = document.getElementById('connDot');
+  const label = document.getElementById('connLabel');
+  dot.className   = 'conn-dot ' + state;
+  label.textContent = state.toUpperCase();
+  document.getElementById('btnConnect').style.display    = state === 'connected' ? 'none' : '';
+  document.getElementById('btnDisconnect').style.display = state === 'connected' ? ''     : 'none';
+}
+
+function startMQTT() {
+  const topicBase = document.getElementById('topicInput').value.trim();
+  if (!topicBase) { alert('Enter your topic base first (e.g. solar/yourname)'); return; }
+
+  setConnState('connecting');
+
+  const clientId = 'solarguard_web_' + Math.random().toString(16).substr(2, 6);
+  mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+    clientId,
+    clean: true,
+    connectTimeout: 10000,
+    reconnectPeriod: 3000,
+  });
+
+  mqttClient.on('connect', () => {
+    setConnState('connected');
+    const subTopic = topicBase + '/#';
+    mqttClient.subscribe(subTopic, { qos: 0 }, (err) => {
+      if (err) console.error('Subscribe error:', err);
+      else addLog('—', 'ok', new Date().toLocaleTimeString());
+    });
+    addRaw('SYSTEM', `Subscribed to ${subTopic}`);
+  });
+
+  mqttClient.on('error', (err) => {
+    setConnState('error');
+    console.error('MQTT error:', err);
+  });
+
+  mqttClient.on('close', () => {
+    setConnState('error');
+  });
+
+  mqttClient.on('message', (topic, message) => {
+    const payload = message.toString();
+    addRaw(topic, payload);
+
+    // Extract panel number from topic
+    // Expected: solar/yourname/panel1  → panel number 1
+    const match = topic.match(/panel(\d+)/i);
+    if (!match) return;
+    const pNum = parseInt(match[1]);
+    if (pNum < 1 || pNum > 3) return;
+
+    try {
+      const data = JSON.parse(payload);
+      updateCard(pNum, data);
+    } catch(e) {
+      console.warn('Failed to parse payload:', payload);
+    }
+  });
+}
+
+function stopMQTT() {
+  if (mqttClient) {
+    mqttClient.end(true);
+    mqttClient = null;
+  }
+  setConnState('disconnected');
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+buildCards();
+setConnState('disconnected');
+</script>
+</body>
+</html>
