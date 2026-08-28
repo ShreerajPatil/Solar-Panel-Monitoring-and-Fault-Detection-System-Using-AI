@@ -127,7 +127,7 @@ Telegram alert delivery was validated end-to-end against a physical ESP32-S3 boa
 - No galvanic isolation on the voltage-sensing circuit — a consideration for higher-voltage deployments.
 - DHT11 accuracy/resolution is a limiting factor; DHT22/SHT31 would improve thermal fault discrimination.
 - AI diagnosis is currently stateless per fault event — no historical trend awareness (e.g. distinguishing a recurring cleaning issue from an isolated dust storm).
-- Scaling beyond 3 panels would benefit from hierarchical MQTT topics and a time-series dashboard (e.g. Grafana + InfluxDB).
+- Scaling beyond 3 panels would benefit from hierarchical MQTT topics and a time-series dashboard.
 
 ## Author
 
