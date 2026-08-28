@@ -16,7 +16,7 @@ The system is organized as a three-tier pipeline:
 2. **Local processing, classification & display (Tier 2)** — the ESP32-S3 runs deterministic fault classification and drives an OLED efficiency dashboard plus a TFT panel-detail display.
 3. **Cloud communication & AI diagnosis (Tier 3)** — sensor/fault data is published over MQTT; a subscriber process queries Gemini on fault detection and delivers the diagnosis via Telegram.
 
-![Circuit Design](Images/Circuit.png)
+![Circuit Design](Images/Design.png)
 
 *Cirkit Designer simulation layout — three-panel monitoring node with ESP32-S3, voltage dividers, DHT11 sensors, OLED, and ILI9341 TFT LCD.*
 
