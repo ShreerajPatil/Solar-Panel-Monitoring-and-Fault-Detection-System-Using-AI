@@ -20,7 +20,8 @@ The system is organized as a three-tier pipeline:
 
 *Cirkit Designer simulation layout — three-panel monitoring node with ESP32-S3, voltage dividers, DHT11 sensors, OLED, and ILI9341 TFT LCD.*
 ## How to use Website
- ![use of website](Images/useweb.png) Download `solarguard_2 (1)` from this repository then in this website just change `solar/yourname` to `solar/fault`. Then press connect.
+ ![use of website](Images/useweb.png)
+ Download `solarguard_2 (1)` from this repository then in this website just change `solar/yourname` to `solar/fault`. Then press connect.
 
 ## Hardware
 
